@@ -1,0 +1,47 @@
+[Unit]
+Description=Calendar MCP auth gateway (OAuth colocalise + proxy upstream)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=calendar-app
+Group=calendar-app
+WorkingDirectory=/opt/calendar-mcp
+EnvironmentFile=/opt/calendar-mcp/calendar.env
+ExecStart=/opt/calendar-mcp/venv/bin/python -m calendar_gateway.server
+Restart=always
+RestartSec=3
+
+# --- Isolation (calque sur vault-mcp.service) ---
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RemoveIPC=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# Boucle locale uniquement : nginx est le seul point d'entree externe.
+IPAddressAllow=localhost
+IPAddressDeny=any
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+# Seul l'etat OAuth est ecrit (registre clients, jetons, consentements).
+ReadWritePaths=/opt/calendar-mcp/oauth
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

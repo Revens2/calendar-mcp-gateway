@@ -1,0 +1,58 @@
+# Google Calendar MCP upstream — compose adapte a la stack deployee sur un serveur prive.
+# Le compose upstream publie 3000 + 3500-3505 sur toutes les interfaces : JAMAIS tel quel.
+# Ici : boucle locale stricte, image pinnee (tag git v2.6.3), credentials montes en ro,
+# volume persistant pour les refresh tokens, healthcheck, isolation Docker minimale.
+#
+# Le seul point d'entree externe est la passerelle calendar-mcp-gateway (127.0.0.1:8790),
+# elle-meme servie par nginx (443, OAuth) — jamais ce conteneur directement.
+
+services:
+  calendar-mcp:
+    build:
+      context: ./app
+    image: calendar-mcp:2.6.3
+    container_name: calendar-mcp
+    restart: unless-stopped
+    env_file: .env
+
+    # Boucle locale stricte uniquement.
+    #   3000     : serveur MCP streamable-http (par sessions)
+    #   3500-3505: serveur d'auth local Google (premier port libre) — flux initial uniquement
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3500:3500"
+      - "127.0.0.1:3501:3501"
+      - "127.0.0.1:3502:3502"
+      - "127.0.0.1:3503:3503"
+      - "127.0.0.1:3504:3504"
+      - "127.0.0.1:3505:3505"
+
+    volumes:
+      # Credentials OAuth Google : fichier hors git, perms 600, monte en lecture seule.
+      - ./gcp-oauth.keys.json:/app/gcp-oauth.keys.json:ro
+      # Persistance des refresh tokens Google.
+      - calendar-tokens:/home/nodejs/.config/google-calendar-mcp
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: "0.75"
+
+    # node:18-alpine n'a pas curl ; busybox wget fait l'affaire.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${PORT:-3000}/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  calendar-tokens:
+    driver: local
