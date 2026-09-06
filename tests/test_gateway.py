@@ -249,9 +249,31 @@ def test_flux_oauth_complet(environ):
 
 
 # --- Jeton statique + proxy + politique -----------------------------------------------
-# Outils de l'upstream calendar-mcp 2.6.3 decouverts en live (2026-09-06).
+# Inventaire de l'upstream calendar-mcp 2.6.3 (registre reel du tag, 2026-09-06) :
+# les outils classes par la politique + ceux que l'upstream sait faire mais que la
+# passerelle ne doit JAMAIS annoncer (create-events bulk, respond-to-event,
+# manage-accounts) + un nom totalement inconnu (garde fail-closed).
 _OUTILS_UPSTREAM = sorted(
-    OUTILS_LECTURE | OUTILS_ECRITURE | OUTILS_ADMIN | {"outil-upstream-inconnu"}
+    OUTILS_LECTURE
+    | OUTILS_ECRITURE
+    | OUTILS_ADMIN
+    | {"create-events", "respond-to-event", "outil-upstream-inconnu"}
+)
+
+# Profil minimal voulu pour le planner : les 10 outils exposes aux clients.
+_PROFIL_MINIMAL = frozenset(
+    {
+        "list-calendars",
+        "list-events",
+        "search-events",
+        "get-event",
+        "create-event",
+        "update-event",
+        "delete-event",
+        "get-freebusy",
+        "get-current-time",
+        "list-colors",
+    }
 )
 
 
@@ -634,6 +656,83 @@ def test_politique_visible_et_refus(environ):
     assert politique.autoriser_call("manage-accounts", full) is not None
     # inconnu refuse
     assert politique.autoriser_call("nimporte-quoi", full) is not None
+
+
+def test_politique_classe_delete_event_et_list_colors():
+    """delete-event (mutateur) et list-colors (lecture) sont classes et
+    autorisables par les jetons portant la bonne portee."""
+    politique = PolitiqueOutils()
+    lecture = {politique.portee_lecture}
+    full = {politique.portee_lecture, politique.portee_ecriture}
+
+    assert "delete-event" in OUTILS_ECRITURE
+    assert "list-colors" in OUTILS_LECTURE
+    # delete-event est une mutation : portee ecriture exigee, lecture seule refuse
+    assert politique.autoriser_call("delete-event", full) is None
+    assert politique.autoriser_call("delete-event", lecture) is not None
+    # list-colors est de la lecture seule
+    assert politique.autoriser_call("list-colors", lecture) is None
+
+
+def test_tools_list_annonce_exactement_le_profil_minimal(environ):
+    """Le proxy n'annonce QUE le profil minimal (10 outils) meme quand l'upstream
+    enregistre davantage (create-events, respond-to-event, manage-accounts,
+    inconnu) : jamais plus large que la politique."""
+
+    async def _t():
+        serveur, url, _socket_ecoute, recus = _serveur_stub()
+        try:
+            os.environ["CALENDAR_MCP_UPSTREAM"] = url
+            async with _client(JETON_ECRITURE, SCOPES_ECRITURE) as c:
+                entetes = _entetes_autorises(JETON_ECRITURE)
+                r = await c.post("/mcp", content=_json_rpc("initialize", 1), headers=entetes)
+                session = r.headers["mcp-session-id"]
+                r = await c.post(
+                    "/mcp", content=_json_rpc("tools/list", 2), headers={**entetes, "mcp-session-id": session}
+                )
+                assert r.status_code == 200
+                noms = {t["name"] for t in r.json()["result"]["tools"]}
+                assert noms == _PROFIL_MINIMAL, noms
+                assert not (noms & (OUTILS_ADMIN | {"create-events", "respond-to-event"}))
+        finally:
+            serveur.should_exit = True
+            if _socket_ecoute:
+                _socket_ecoute.close()
+
+    _courir(_t())
+
+
+def test_tools_list_annonce_list_colors_et_refuse_delete_event_sans_ecriture(environ):
+    """Un jeton lecture seule voit list-colors mais PAS delete-event (mutation)."""
+
+    async def _t():
+        serveur, url, _socket_ecoute, recus = _serveur_stub()
+        try:
+            os.environ["CALENDAR_MCP_UPSTREAM"] = url
+            async with _client(JETON_LECTURE, SCOPES_LECTURE) as c:
+                entetes = _entetes_autorises(JETON_LECTURE)
+                r = await c.post("/mcp", content=_json_rpc("initialize", 1), headers=entetes)
+                session = r.headers["mcp-session-id"]
+                r = await c.post(
+                    "/mcp", content=_json_rpc("tools/list", 2), headers={**entetes, "mcp-session-id": session}
+                )
+                noms = {t["name"] for t in r.json()["result"]["tools"]}
+                assert "list-colors" in noms
+                assert "delete-event" not in noms
+                # un call forge vers delete-event est refuse AVANT l'upstream
+                r = await c.post(
+                    "/mcp",
+                    content=_json_rpc("tools/call", 8, {"name": "delete-event", "arguments": {}}),
+                    headers={**entetes, "mcp-session-id": session},
+                )
+                assert r.json()["error"]["code"] == -32000
+                assert recus == []
+        finally:
+            serveur.should_exit = True
+            if _socket_ecoute:
+                _socket_ecoute.close()
+
+    _courir(_t())
 
 
 def test_sante(environ):

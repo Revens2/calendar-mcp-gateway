@@ -5,6 +5,11 @@
 #
 # Le seul point d'entree externe est la passerelle calendar-mcp-gateway (127.0.0.1:8790),
 # elle-meme servie par nginx (443, OAuth) — jamais ce conteneur directement.
+#
+# `.env` (env_file) n'est pas versionne mais n'est PAS un secret : le copier depuis
+# `calendar-mcp-upstream.env.example` (profil d'outils ENABLED_TOOLS compris) et le
+# mettre a jour avec le compose. Les credentials Google, eux, restent hors Git dans
+# `gcp-oauth.keys.json` (0600).
 
 services:
   calendar-mcp:

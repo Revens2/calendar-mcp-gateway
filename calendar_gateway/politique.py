@@ -7,8 +7,11 @@ jamais annonce dans `tools/list`, jamais executable (fail-closed) tant qu'un
 mainteneur ne l'a pas classe et deploye. Cela empeche une future version de
 l'upstream d'exposer silencieusement un outil dangereux.
 
-Liste des outils constatee sur l'upstream deploye (conteneur calendar-mcp 2.6.3,
-2026-09-06, 10 outils).
+Profil expose aux clients (outils classes ci-dessous) : 7 outils de lecture + 3
+mutateurs, soit exactement le profil minimal voulu pour le planner. L'upstream
+calendar-mcp 2.6.3 enregistre en plus `create-events` (bulk), `respond-to-event`
+et `manage-accounts` : ils ne sont pas classes (donc jamais annonces, jamais
+executables) -- `manage-accounts` etant de plus explicitement refuse ci-dessous.
 """
 
 from __future__ import annotations
@@ -24,15 +27,18 @@ OUTILS_LECTURE: frozenset[str] = frozenset(
         "get-event",
         "get-freebusy",
         "list-calendars",
+        "list-colors",
         "list-events",
         "search-events",
     }
 )
 
-# Mutateurs sur les calendriers/evenements.
+# Mutateurs sur les calendriers/evenements (delete-event inclus : le planner
+# doit pouvoir supprimer automatiquement ses propres blocs de planning).
 OUTILS_ECRITURE: frozenset[str] = frozenset(
     {
         "create-event",
+        "delete-event",
         "update-event",
     }
 )
