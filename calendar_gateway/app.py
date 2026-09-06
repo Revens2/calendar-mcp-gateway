@@ -28,11 +28,14 @@ from starlette.routing import Route
 
 from calendar_gateway.consentement import routes_consentement
 from calendar_gateway.oauth import PORTEE, PORTEES, FournisseurOAuth, MagasinOAuth
+from calendar_gateway.politique import PolitiqueOutils
 from calendar_gateway.upstream import ProxyMCP
 
 PORT_PAR_DEFAUT = 8790
 CHEMIN_MCP = "/mcp"
-OUTILS_RETIRES = {"manage-accounts"}  # reserve a l'administration locale
+# Politique d'autorisation explicite : lecture/ecriture par outil, `manage-accounts`
+# bloque pour tout client externe (meme avec calendar:ecriture), inconnu -> fail-closed.
+POLITIQUE = PolitiqueOutils()
 
 
 def _config() -> tuple[str, str, int, str, str]:
@@ -88,7 +91,7 @@ def construire_application(
         magasin=MagasinOAuth(repertoire=repertoire_oauth) if repertoire_oauth else None,
         jeton_statique=jeton,
     )
-    proxy = ProxyMCP(upstream, outils_retires=OUTILS_RETIRES)
+    proxy = ProxyMCP(upstream, politique=POLITIQUE)
 
     routes: list[Route] = [
         *create_auth_routes(
@@ -124,6 +127,8 @@ def construire_application(
     application = Starlette(routes=routes)
     # L'AuthenticationMiddleware peuplie scope["user"]/scope["auth"] sur toutes les
     # requetes ; RequireAuthMiddleware (sur /mcp) refuse ensuite sans jeton valide.
+    # Le controle fin lecture/ecriture par outil est applique dans ProxyMCP (politique),
+    # sur la base des portees du jeton valide, jamais d'un en-tete client.
     return AuthenticationMiddleware(
         application,
         backend=BearerAuthBackend(ProviderTokenVerifier(fournisseur)),
