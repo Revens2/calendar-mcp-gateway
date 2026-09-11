@@ -743,3 +743,52 @@ def test_sante(environ):
             assert r.json()["status"] == "ok"
 
     _courir(_t())
+
+
+# --- Ecarts live du 2026-09-08 (unification mymcps + SDK v2) ------------------------
+EMETTEUR_MYMCPS = "https://mymcps.example.test/oauth/calendar"
+
+
+def test_ressource_forme_mymcps(environ, monkeypatch):
+    """Issuer `.../oauth/calendar` -> resource `.../calendar/mcp` (spec stricte RFC 9728),
+    et le 401 pointe vers les metadonnees de CETTE ressource."""
+    monkeypatch.setenv("CALENDAR_MCP_ISSUER", EMETTEUR_MYMCPS)
+
+    async def _t():
+        app = _app(JETON_ECRITURE, SCOPES_ECRITURE)
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="https://mymcps.example.test") as c:
+            r = await c.get("/.well-known/oauth-protected-resource/calendar/mcp")
+            assert r.status_code == 200, r.text
+            d = r.json()
+            assert d["resource"] == "https://mymcps.example.test/calendar/mcp"
+            assert [_normaliser_issuer(x) for x in d["authorization_servers"]] == [EMETTEUR_MYMCPS]
+            r = await c.post("/mcp", content=_json_rpc("initialize", 1), headers={"Content-Type": "application/json"})
+            assert r.status_code == 401
+            assert (
+                'resource_metadata="https://mymcps.example.test/.well-known/oauth-protected-resource/calendar/mcp"'
+                in r.headers["www-authenticate"]
+            )
+
+    _courir(_t())
+
+
+@pytest.mark.parametrize(
+    ("annonce", "relaye"),
+    [("2026-07-28", "2025-11-25"), (" 2026-07-28 ", "2025-11-25"), ("2025-06-18", "2025-06-18")],
+)
+def test_shim_version_protocole_chatgpt(annonce, relaye):
+    """ChatGPT annonce 2026-07-28 avec un corps 2025 : l'en-tete relaye a l'upstream est
+    ramene a 2025-11-25 ; toute autre version passe telle quelle."""
+    from calendar_gateway.upstream import _entetes
+
+    scope = {"headers": [(b"mcp-protocol-version", annonce.encode("latin-1"))]}
+    assert _entetes(scope)["mcp-protocol-version"] == relaye
+
+
+def test_formulaire_consentement_action_relative():
+    """Derriere /oauth/calendar, une action absolue `/consentement` sortirait du prefixe."""
+    from calendar_gateway.consentement import _page
+
+    html = _page("d", "c").body.decode()
+    assert 'action="consentement"' in html
+    assert 'action="/consentement"' not in html

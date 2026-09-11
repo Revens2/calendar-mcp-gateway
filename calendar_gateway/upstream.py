@@ -91,7 +91,10 @@ def _entetes(scope: Scope) -> dict[str, str]:
     for cle, valeur in scope.get("headers", []):
         nom = cle.decode("latin-1").lower()
         if nom in _ENTETES_REQUETE:
-            resultat[nom] = valeur.decode("latin-1")
+            val = valeur.decode("latin-1")
+            if nom == "mcp-protocol-version" and val.strip() == "2026-07-28":
+                val = "2025-11-25"
+            resultat[nom] = val
     return resultat
 
 

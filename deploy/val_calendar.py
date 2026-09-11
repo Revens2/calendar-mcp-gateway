@@ -27,7 +27,8 @@ import sys
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
-BASE = "http://127.0.0.1:8790/mcp"  # nosemgrep: passerelle en boucle locale (127.0.0.1), jamais exposee
+# Passerelle en boucle locale (127.0.0.1), jamais exposee : http volontaire.
+BASE = "http://127.0.0.1:8790/mcp"  # nosemgrep: python.lang.security.audit.insecure-transport.urllib.insecure-request-object.insecure-request-object
 ENV = "/opt/calendar-mcp/calendar.env"
 
 FUSEAU = "Europe/Paris"
@@ -66,8 +67,9 @@ def appeler(session: str | None, ident: int, methode: str, params: dict) -> tupl
     }
     if session:
         entetes["mcp-session-id"] = session
-    requete = urllib.request.Request(BASE, data=corps, headers=entetes)  # nosemgrep: URL constante de la passerelle locale
-    with urllib.request.urlopen(requete, timeout=90) as reponse:  # nosemgrep: meme URL constante (boucle locale)
+    # URL constante de la passerelle locale (boucle locale).
+    requete = urllib.request.Request(BASE, data=corps, headers=entetes)  # nosemgrep: python.lang.security.audit.insecure-transport.urllib.insecure-request-object.insecure-request-object
+    with urllib.request.urlopen(requete, timeout=90) as reponse:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         session_id = reponse.headers.get("mcp-session-id") or session
         brut = reponse.read().decode()
     # Reponse JSON nue ou enveloppe SSE (l'upstream v2.6.3 repond en SSE).
